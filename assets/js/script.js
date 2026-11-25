@@ -53,29 +53,30 @@
   const $ = (selector) => document.querySelector(selector);
   const bs = window.bootstrap;
   const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const icon = (id) => `<svg class="icon" aria-hidden="true"><use href="#i-${id}"/></svg>`;
+  const iconNames = {
+    pin: ['fa-solid', 'fa-location-dot'],
+    clock: ['fa-regular', 'fa-clock'],
+    tag: ['fa-solid', 'fa-tag'],
+    close: ['fa-solid', 'fa-xmark']
+  };
+  const icon = (id) => `<i class="icon ${iconNames[id].join(' ')}" aria-hidden="true"></i>`;
+  const makeIcon = (id) => {
+    const element = document.createElement('i');
+    element.className = `icon ${iconNames[id].join(' ')}`;
+    element.setAttribute('aria-hidden', 'true');
+    return element;
+  };
   const rupiah = (item) => Number(item.price.replace(/\D/g, ''));
   const mailLink = `<a href="mailto:${EMAIL}">${EMAIL}</a>`;
-  const resultModalEl = $('#formResultModal');
-  const resultModal = bs && new bs.Modal(resultModalEl);
-
-  function showPopup({ title, message }) {
-    $('#formResultTitle').textContent = title;
-    $('#formResultMessage').textContent = message;
-
-    if (resultModal) resultModal.show();
-    else window.alert(`${title}\n\n${message}`);
-  }
-
   /* Paket: memuat / kosong / galat */
-  const list = $('#packageList');
-  const state = $('#packageState');
+  const list = $('#listPaket');
+  const status = $('#statusPaket');
 
   function showState(html, isError = false) {
     list.hidden = true;
-    state.hidden = false;
-    state.className = isError ? 'state text-body' : 'state';
-    state.innerHTML = html;
+    status.hidden = false;
+    status.className = isError ? 'status text-body' : 'status';
+    status.innerHTML = html;
   }
 
   function renderPackages(items) {
@@ -95,18 +96,18 @@
         </div>
         <div class="ticket-stub">
           <p class="ticket-price"><small>Harga per orang</small><strong>${item.price}</strong></p>
-          <button class="btn btn-outline-ink" type="button" data-package="${item.id}">Detail Paket</button>
+          <button class="btn btn-garis" type="button" data-booking-package="${item.id}">Pesan paket</button>
         </div>
       </li>`).join('');
-    state.hidden = true;
+    status.hidden = true;
     list.hidden = false;
 
     // Harga hero dihitung dari data yang sama
     const cheapest = items.reduce((min, item) => (rupiah(item) < rupiah(min) ? item : min));
-    const heroPrice = $('#heroPrice');
+    const hargaMulai = $('#hargaMulai');
 
-    heroPrice.innerHTML = `Paket mulai dari <strong>${cheapest.price}</strong> per orang.`;
-    heroPrice.hidden = false;
+    hargaMulai.innerHTML = `Paket mulai dari <strong>${cheapest.price}</strong> per orang.`;
+    hargaMulai.hidden = false;
   }
 
   try {
@@ -116,15 +117,14 @@
     showState(`Daftar paket belum bisa ditampilkan. Muat ulang halaman atau hubungi ${mailLink}.`, true);
   }
 
-  /* Modal detail paket (tombol di destinasi, daftar paket, dan footer) */
-  const modalEl = $('#packageModal');
+  /* Detail paket hanya dibuka dari tombol di Destinasi. */
+  const modalEl = $('#modalDest');
   const modal = bs && new bs.Modal(modalEl);
   let selected = null;
 
-  const toContact = () => $('#contact').scrollIntoView({ behavior: calm ? 'auto' : 'smooth' });
+  const keDestinasi = () => $('#destinasi').scrollIntoView({ behavior: calm ? 'auto' : 'smooth' });
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  // DOM: satu listener di document menangkap klik semua tombol [data-package] (event delegation)
   document.addEventListener('click', (event) => {
     const button = event.target.closest('[data-package]');
 
@@ -134,31 +134,32 @@
 
     if (!selected) return;
 
-    // DOM: isi elemen modal dari data paket (src/alt lewat properti, teks lewat textContent)
-    $('#modalImage').src = selected.image;
-    $('#modalImage').alt = selected.alt;
-    $('#modalLocation').textContent = selected.destination;
-    $('#modalTitle').textContent = selected.name;
-    $('#modalDuration').textContent = selected.duration;
-    $('#modalPrice').textContent = selected.price;
-    $('#modalDescription').textContent = selected.description;
+    $('#fotoDest').src = selected.image;
+    $('#fotoDest').alt = selected.alt;
+    $('#lokasiDest').textContent = selected.destination;
+    $('#judulDest').textContent = selected.name;
+    $('#durasiDest').textContent = selected.duration;
+    $('#hargaDest').textContent = selected.price;
+    $('#infoDest').textContent = selected.description;
 
     if (modal) modal.show();
-    else toContact(); // Bootstrap gagal dimuat
+    else keDestinasi();
   });
 
-  /* Formulir: tab Tanya tim / Pesan paket */
-  const contactForm = $('#contactForm');
-  const bookingForm = $('#bookingForm');
-  const bookSelect = $('#bookPackageSelect');
-  const bookName = $('#bookName');
-  const people = $('#bookPeople');
-  const peopleMinus = $('#peopleMinus');
-  const peoplePlus = $('#peoplePlus');
-  const departure = $('#bookDeparture');
-  const summary = $('#bookingSummary');
+  const modalPesanEl = $('#modalPesan');
+  const modalPesan = bs && new bs.Modal(modalPesanEl);
+  const formKontak = $('#formKontak');
+  const formPesan = $('#formPesan');
+  const bookSelect = $('#pilihPaket');
+  const namaPesan = $('#namaPesan');
+  const people = $('#jmlOrang');
+  const kurangOrang = $('#kurangOrang');
+  const tambahOrang = $('#tambahOrang');
+  const departure = $('#tglBerangkat');
+  const summary = $('#ringkasPaket');
+  const hasilPesan = $('#hasilPesan');
   const minPeople = Number(people.min);
-  const maxPeople = Number(people.max); // batas jumlah orang dibaca dari atribut max di HTML
+  const maxPeople = Number(people.max);
 
   const localDateString = (date = new Date()) => {
     const year = date.getFullYear();
@@ -176,91 +177,111 @@
     departure.setAttribute('aria-invalid', String(!valid));
   });
 
-  // Pesan batas jumlah orang hanya ditampilkan saat nilainya tidak valid
-  $('#peopleErr').textContent = `Jumlah orang harus bilangan bulat antara ${minPeople} dan ${maxPeople}.`;
+  $('#errOrang').textContent = `Jumlah orang harus bilangan bulat antara ${minPeople} dan ${maxPeople}.`;
 
-  // DOM: pilihan paket dibuat dari array packages (createElement lewat new Option), jadi selalu sama dengan daftar paket
   packages.forEach((item) => bookSelect.append(new Option(item.name, item.name)));
 
   const peopleCount = () => Number(people.value);
   const peopleValid = () => people.value.trim() !== '' && Number.isInteger(peopleCount()) && peopleCount() >= minPeople && peopleCount() <= maxPeople;
   const formatRupiah = (value) => `Rp${value.toLocaleString('id-ID')}`;
 
-  // Ringkasan paket + total, dan status tombol - / + mengikuti pilihan dan jumlah orang
   function updateBooking() {
     const item = packages.find((pkg) => pkg.name === bookSelect.value);
 
-    peopleMinus.disabled = !(peopleCount() > minPeople);
-    peoplePlus.disabled = !(peopleCount() < maxPeople);
+    kurangOrang.disabled = !(peopleCount() > minPeople);
+    tambahOrang.disabled = !(peopleCount() < maxPeople);
     people.classList.toggle('is-invalid', !peopleValid());
     people.setAttribute('aria-invalid', String(!peopleValid()));
-    people.setAttribute('aria-describedby', 'peopleErr');
+    people.setAttribute('aria-describedby', 'errOrang');
     summary.hidden = !item;
 
     if (!item) return;
 
-    const total = peopleValid() ? `<span class="booking-total">Perkiraan total (${peopleCount()} orang): <strong>${formatRupiah(rupiah(item) * peopleCount())}</strong></span>` : '';
+    summary.replaceChildren();
+    const duration = document.createElement('span');
+    duration.append(makeIcon('clock'), item.duration);
+    const price = document.createElement('span');
+    price.append(makeIcon('tag'), `${item.price} per orang`);
+    summary.append(duration, price);
 
-    summary.innerHTML = `<span>${icon('clock')}${item.duration}</span><span>${icon('tag')}${item.price} per orang</span>${total}`;
+    if (peopleValid()) {
+      const total = document.createElement('span');
+      total.className = 'total-paket';
+      const totalPrice = document.createElement('strong');
+      totalPrice.textContent = formatRupiah(rupiah(item) * peopleCount());
+      total.append(`Perkiraan total (${peopleCount()} orang): `, totalPrice);
+      summary.append(total);
+    }
   }
 
   [bookSelect, people].forEach((field) => field.addEventListener('input', updateBooking));
-  bookName.addEventListener('input', () => {
-    if (bookName.value.trim().length < 3) return;
-    bookName.classList.remove('is-invalid');
-    bookName.setAttribute('aria-invalid', 'false');
+  namaPesan.addEventListener('input', () => {
+    if (namaPesan.value.trim().length < 3) return;
+    namaPesan.classList.remove('is-invalid');
+    namaPesan.setAttribute('aria-invalid', 'false');
   });
   bookSelect.addEventListener('change', () => {
     if (!packages.some((item) => item.name === bookSelect.value)) return;
     bookSelect.classList.remove('is-invalid');
     bookSelect.setAttribute('aria-invalid', 'false');
   });
-  bookingForm.addEventListener('reset', () => setTimeout(() => {
+  formPesan.addEventListener('reset', () => setTimeout(() => {
     departure.min = localDateString();
-    bookingForm.hidden = false;
-    $('#bookingInvoice').hidden = true;
-    [bookSelect, bookName, people, departure].forEach((field) => {
+    formPesan.hidden = false;
+    hasilPesan.hidden = true;
+    hasilPesan.replaceChildren();
+    [bookSelect, namaPesan, people, departure].forEach((field) => {
       field.classList.remove('is-invalid');
       field.removeAttribute('aria-invalid');
     });
     updateBooking();
   }));
 
-  document.querySelectorAll('.people-stepper [data-step]').forEach((button) => button.addEventListener('click', () => {
+  document.querySelectorAll('.atur-orang [data-step]').forEach((button) => button.addEventListener('click', () => {
     const next = (peopleValid() ? peopleCount() : minPeople) + Number(button.dataset.step);
 
     people.value = Math.min(maxPeople, Math.max(minPeople, next));
-    people.dispatchEvent(new Event('input', { bubbles: true })); // memicu hapus galat + perbarui ringkasan
+    people.dispatchEvent(new Event('input', { bubbles: true }));
   }));
 
   updateBooking();
 
-  // Tombol "Pesan paket" di modal: tutup modal, buka tab pemesanan, isi nama paket, lalu fokus ke kolom nama
-  $('#bookPackage').addEventListener('click', () => {
+  function openBooking(choice = null) {
+    formPesan.reset();
+    if (choice) bookSelect.value = choice.name;
+    bookSelect.classList.remove('is-invalid');
+    bookSelect.setAttribute('aria-invalid', 'false');
+    updateBooking();
+    modalPesan?.show();
+    const firstField = choice ? namaPesan : bookSelect;
+    setTimeout(() => firstField.focus({ preventScroll: true }), calm ? 0 : 450);
+  }
+
+  document.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-booking-package], [data-booking-open]');
+    if (!button) return;
+
+    const choice = button.dataset.bookingPackage
+      ? packages.find((item) => item.id === button.dataset.bookingPackage)
+      : null;
+    openBooking(choice);
+  });
+
+  $('#pesanDest').addEventListener('click', () => {
     if (!selected) return;
 
     const choice = selected;
-    const goBooking = () => {
-      bs?.Tab.getOrCreateInstance($('#tabBooking')).show();
-      bookSelect.value = choice.name;
-      bookSelect.classList.remove('is-invalid');
-      bookSelect.setAttribute('aria-invalid', 'false');
-      updateBooking();
-      toContact();
-      setTimeout(() => bookName.focus({ preventScroll: true }), calm ? 0 : 450);
-      bs?.Toast.getOrCreateInstance($('#bookingToast'), { delay: 5000 }).show();
-    };
 
     if (modal) {
-      // Tunggu modal benar-benar tertutup supaya scroll ke form tidak terkunci oleh modal
-      modalEl.addEventListener('hidden.bs.modal', goBooking, { once: true });
+      // Bootstrap hanya menampilkan satu modal; tunggu detail tertutup sebelum membuka form.
+      modalEl.addEventListener('hidden.bs.modal', () => openBooking(choice), { once: true });
       modal.hide();
     } else {
-      goBooking();
+      openBooking(choice);
     }
   });
 
-  const contactFields = ['name', 'email', 'subject', 'message'].map((id) => $(`#${id}`));
+  const kolomKontak = ['name', 'email', 'subject', 'message'].map((id) => $(`#${id}`));
 
   function contactFieldValid(field) {
     const text = field.value.trim();
@@ -268,17 +289,18 @@
     return field.type === 'email' ? EMAIL_RE.test(text) : text !== '';
   }
 
-  contactFields.forEach((field) => field.addEventListener('input', () => {
+  kolomKontak.forEach((field) => field.addEventListener('input', () => {
     field.classList.remove('is-invalid');
     field.setAttribute('aria-invalid', 'false');
+    $('#statusKontak').hidden = true;
   }));
 
-  contactForm.addEventListener('submit', (event) => {
+  formKontak.addEventListener('submit', (event) => {
     event.preventDefault();
 
-    const invalid = contactFields.filter((field) => !contactFieldValid(field));
+    const invalid = kolomKontak.filter((field) => !contactFieldValid(field));
 
-    contactFields.forEach((field) => {
+    kolomKontak.forEach((field) => {
       const bad = invalid.includes(field);
 
       field.classList.toggle('is-invalid', bad);
@@ -291,22 +313,20 @@
       return;
     }
 
-    showPopup({
-      title: 'Pesan berhasil disimulasikan',
-      message: 'Terima kasih, pesanmu sudah tervalidasi. Ini simulasi tanpa backend, jadi pesan tidak dikirim atau disimpan.'
-    });
-    contactForm.reset();
+    $('#statusKontak').textContent = 'Terima kasih, pesanmu sudah terkirim, tunggu tim kami membalas melalui email yaaa.';
+    $('#statusKontak').hidden = false;
+    formKontak.reset();
   });
 
-  bookingForm.addEventListener('submit', (event) => {
+  formPesan.addEventListener('submit', (event) => {
     event.preventDefault();
 
-    const validName = bookName.value.trim().length >= 3;
+    const validName = namaPesan.value.trim().length >= 3;
     const validPackage = packages.some((item) => item.name === bookSelect.value);
     const validPeople = peopleValid();
     const validDeparture = departureValid();
     const fields = [
-      [bookName, validName],
+      [namaPesan, validName],
       [bookSelect, validPackage],
       [people, validPeople],
       [departure, validDeparture]
@@ -326,46 +346,87 @@
 
     const item = packages.find((pkg) => pkg.name === bookSelect.value);
     const date = new Date(`${departure.value}T00:00:00`);
-    $('#bookingInvoiceName').textContent = bookName.value.trim();
-    $('#bookingInvoicePackage').textContent = item.name;
-    $('#bookingInvoiceDeparture').textContent = date.toLocaleDateString('id-ID', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric'
+    const invoiceHeader = document.createElement('div');
+    invoiceHeader.className = 'hasil-kepala';
+    const invoiceTitle = document.createElement('h3');
+    invoiceTitle.id = 'judulHasil';
+    invoiceTitle.textContent = 'Ringkasan pemesanan';
+    const invoiceStatus = document.createElement('span');
+    invoiceStatus.className = 'hasil-status';
+    invoiceStatus.textContent = 'Ringkasan saja';
+    invoiceHeader.append(invoiceTitle, invoiceStatus);
+
+    const invoiceMessage = document.createElement('p');
+    invoiceMessage.className = 'hasil-catatan';
+    invoiceMessage.textContent = 'Data ini hanya ditampilkan di halaman dan tidak dikirim atau disimpan.';
+
+    const invoiceSummary = document.createElement('div');
+    invoiceSummary.className = 'hasil-ringkas';
+    const customer = document.createElement('strong');
+    customer.textContent = namaPesan.value.trim();
+    const packageName = document.createElement('strong');
+    packageName.textContent = item.name;
+    const departureDate = document.createElement('strong');
+    departureDate.textContent = date.toLocaleDateString('id-ID', {
+      day: 'numeric', month: 'long', year: 'numeric'
     });
-    $('#bookingInvoiceDuration').textContent = item.duration;
-    $('#bookingInvoicePeople').textContent = `${peopleCount()} orang`;
-    $('#bookingInvoicePrice').textContent = item.price;
-    $('#bookingInvoiceTotal').textContent = formatRupiah(rupiah(item) * peopleCount());
-    bookingForm.hidden = true;
-    $('#bookingInvoice').hidden = false;
+    invoiceSummary.append('Atas nama ', customer, ' memesan ', packageName, ', berangkat tanggal ', departureDate, '.');
+
+    const rows = document.createElement('dl');
+    rows.className = 'hasil-rincian';
+    const rowData = [
+      ['Durasi', item.duration],
+      ['Jumlah peserta', `${peopleCount()} orang`],
+      ['Harga per orang', item.price]
+    ];
+    rowData.forEach(([labelText, valueText]) => {
+      const row = document.createElement('div');
+      const label = document.createElement('dt');
+      label.textContent = labelText;
+      const value = document.createElement('dd');
+      value.textContent = valueText;
+      row.append(label, value);
+      rows.append(row);
+    });
+
+    const total = document.createElement('div');
+    total.className = 'hasil-total';
+    const totalLabel = document.createElement('span');
+    totalLabel.textContent = 'Perkiraan total';
+    const totalValue = document.createElement('strong');
+    totalValue.textContent = formatRupiah(rupiah(item) * peopleCount());
+    total.append(totalLabel, totalValue);
+
+    const again = document.createElement('button');
+    Object.assign(again, { type: 'button', className: 'btn btn-garis w-100 mt-3', id: 'pesanUlang', textContent: 'Booking Lagi' });
+    hasilPesan.replaceChildren(invoiceHeader, invoiceMessage, invoiceSummary, rows, total, again);
+    formPesan.hidden = true;
+    hasilPesan.hidden = false;
   });
 
-  $('#bookingAgain').addEventListener('click', () => bookingForm.reset());
+  hasilPesan.addEventListener('click', (event) => {
+    if (event.target.closest('#pesanUlang')) formPesan.reset();
+  });
 
-  /* Tandai menu sesuai bagian yang sedang dibaca */
-  const navLinks = [...document.querySelectorAll('#navLinks a.nav-link')];
+  const menuNav = [...document.querySelectorAll('#menuNav a.nav-link')];
 
   if ('IntersectionObserver' in window) {
     const spy = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
         if (!entry.isIntersecting) return;
 
-        navLinks.forEach((link) => link.removeAttribute('aria-current'));
-        navLinks.find((link) => link.getAttribute('href') === `#${entry.target.id}`)?.setAttribute('aria-current', 'true');
+        menuNav.forEach((link) => link.removeAttribute('aria-current'));
+        menuNav.find((link) => link.getAttribute('href') === `#${entry.target.id}`)?.setAttribute('aria-current', 'true');
       });
     }, { rootMargin: '-40% 0px -55% 0px' });
 
-    // Semua section ikut diamati; galeri tidak punya menu, jadi tidak ada yang ditandai saat galeri terbaca
     document.querySelectorAll('main > section[id]').forEach((section) => spy.observe(section));
   }
 
-  /* Navbar: normal di posisi atas; setelah di-scroll berubah jadi pill semi transparan */
-  const header = $('.site-header');
+  const header = $('.header-situs');
   let scrolled = false;
   let queued = false;
 
-  // Dua ambang (masuk > 56px, keluar < 16px) supaya tidak bolak-balik kalau scroll berhenti di sekitar satu titik
   const syncHeader = () => {
     queued = false;
 
@@ -385,7 +446,6 @@
   }, { passive: true });
   syncHeader();
 
-  /* Di HP, tombol WhatsApp disembunyikan selagi tombol hero terlihat agar tidak menutupinya */
   const wa = $('.wa');
   const phone = matchMedia('(max-width: 767.98px)');
 
@@ -396,13 +456,12 @@
     new IntersectionObserver(([entry]) => {
       heroButtonsVisible = entry.isIntersecting;
       tuck();
-    }).observe($('.hero-actions'));
+    }).observe($('.aksi-hero'));
     phone.addEventListener('change', tuck);
   }
 
-  /* Tutup menu habis milih tautan */
-  document.querySelectorAll('#mainNav a').forEach((link) => link.addEventListener('click', () => {
-    const nav = $('#mainNav');
+  document.querySelectorAll('#navUtama a').forEach((link) => link.addEventListener('click', () => {
+    const nav = $('#navUtama');
 
     if (nav.classList.contains('show')) bs?.Collapse.getOrCreateInstance(nav).hide();
   }));
